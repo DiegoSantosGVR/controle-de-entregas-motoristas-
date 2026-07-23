@@ -543,9 +543,20 @@ function cardEntrega(e){
     }
     if(act.children.length) c.appendChild(act);
   }
+  // ações da loja (trocar coletador enquanto aguarda coleta)
+  if(perfil.papel==='loja' && e.status==='pendente'){
+    const act=el('div','e-actions');
+    const t=el('button','btn btn-ghost btn-sm','🔄 Trocar motorista');
+    t.addEventListener('click',()=>modalTrocarMotorista(e)); act.appendChild(t);
+    c.appendChild(act);
+  }
   // ações do admin
   if(perfil.papel==='admin'){
     const act=el('div','e-actions');
+    if(e.status==='pendente'){
+      const t=el('button','btn btn-ghost btn-sm','🔄 Trocar motorista');
+      t.addEventListener('click',()=>modalTrocarMotorista(e)); act.appendChild(t);
+    }
     if(e.status==='coletado'){
       const b=el('button','btn btn-ok btn-sm','📦 Registrar entrega');
       b.addEventListener('click',()=>modalEntrega(e)); act.appendChild(b);
@@ -555,6 +566,31 @@ function cardEntrega(e){
     c.appendChild(act);
   }
   return c;
+}
+
+function modalTrocarMotorista(e){
+  const bg=el('div','modal-bg');
+  bg.innerHTML=`<div class="modal"><div class="modal-head"><h3>Trocar motorista da coleta</h3>
+      <p>RE ${esc(e.num_requisicao)} · ${esc(e.nome_cliente)}</p></div>
+    <div class="modal-body">
+      <div class="field"><label>Motorista atual</label><input value="${esc(e.motorista)}" disabled></div>
+      <div class="field"><label>Novo motorista que vai retirar na loja *</label>
+        <select id="tm-mot"><option value="">Selecione…</option>${
+          motoristasCache.map(mt=>`<option value="${mt.id}" ${mt.id===e.motorista_id?'selected':''}>${esc(mt.nome)}</option>`).join('')}</select></div>
+      <div class="form-foot"><button class="btn btn-ghost" id="tm-cancel">Cancelar</button>
+        <button class="btn btn-primary" id="tm-ok">Salvar</button></div>
+    </div></div>`;
+  document.body.appendChild(bg);
+  bg.addEventListener('click',ev=>{if(ev.target===bg)bg.remove();});
+  $('#tm-cancel').addEventListener('click',()=>bg.remove());
+  $('#tm-ok').addEventListener('click',async()=>{
+    const id=$('#tm-mot').value; const nm=motoristasCache.find(x=>x.id===id)?.nome||'';
+    if(!id){toast('Selecione o novo motorista.','err');return;}
+    if(id===e.motorista_id){bg.remove();return;}
+    const {error}=await sb.from('entregas').update({motorista_id:id, motorista:nm}).eq('id',e.id);
+    if(error){toast(error.message,'err');return;}
+    bg.remove(); toast('Motorista da coleta atualizado','ok'); await fetchEntregas(); renderList();
+  });
 }
 
 async function confirmarColeta(e){
