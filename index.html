@@ -524,6 +524,12 @@ function cardEntrega(e){
     ${e.observacoes?`<span>Obs. loja: ${esc(e.observacoes)}</span>`:''}
     ${e.observacoes_entrega?`<span>Obs. entrega: ${esc(e.observacoes_entrega)}</span>`:''}`;
   c.appendChild(meta);
+  if(e.foto_entrega){
+    const fb=el('button','btn btn-ghost btn-sm','📷 Ver comprovante');
+    fb.style.margin='0 18px 14px'; fb.style.width='fit-content';
+    fb.addEventListener('click',()=>verComprovante(e.foto_entrega));
+    c.appendChild(fb);
+  }
 
   // ações do motorista
   if(perfil.papel==='motorista'){
@@ -558,6 +564,36 @@ async function confirmarColeta(e){
   if(error){toast(error.message,'err');return;}
   toast('Coleta confirmada','ok'); await fetchEntregas(); renderList();
 }
+function comprimirImagem(file, max=1280, q=0.72){
+  return new Promise((resolve,reject)=>{
+    const img=new Image(); const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      URL.revokeObjectURL(url);
+      let w=img.width, h=img.height;
+      if(w>h && w>max){ h=Math.round(h*max/w); w=max; }
+      else if(h>=w && h>max){ w=Math.round(w*max/h); h=max; }
+      const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+      cv.getContext('2d').drawImage(img,0,0,w,h);
+      cv.toBlob(bl=> bl?resolve(bl):reject(new Error('canvas')), 'image/jpeg', q);
+    };
+    img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('img'));};
+    img.src=url;
+  });
+}
+async function verComprovante(path){
+  const {data,error}=await sb.storage.from('comprovantes').createSignedUrl(path,3600);
+  if(error||!data){toast('Não foi possível abrir a foto.','err');return;}
+  const bg=el('div','modal-bg');
+  bg.innerHTML=`<div class="modal" style="max-width:520px"><div class="modal-head"><h3>Comprovante de entrega</h3></div>
+    <div class="modal-body">
+      <img src="${data.signedUrl}" alt="Comprovante" style="width:100%;border-radius:10px;display:block;background:var(--surface-2)">
+      <div class="form-foot"><a class="btn btn-ghost" href="${data.signedUrl}" target="_blank" rel="noopener">Abrir em nova aba</a>
+        <button class="btn btn-primary" id="vc-close">Fechar</button></div>
+    </div></div>`;
+  document.body.appendChild(bg);
+  bg.addEventListener('click',ev=>{if(ev.target===bg)bg.remove();});
+  $('#vc-close').addEventListener('click',()=>bg.remove());
+}
 function modalEntrega(e){
   const isAdmin = perfil.papel==='admin';
   const bg=el('div','modal-bg');
@@ -579,6 +615,9 @@ function modalEntrega(e){
       <div class="field"><label>Quem recebeu no endereço *</label><input id="me-rec" placeholder="Nome de quem recebeu"></div>
       <div class="field"><label>Data da entrega *</label><input id="me-data" type="date" value="${todayISO()}"></div>
       <div class="field"><label>Observações da entrega (opcional)</label><textarea id="me-obs" placeholder="Ex.: cliente ausente, deixado com porteiro, etc."></textarea></div>
+      <div class="field"><label>Foto do local da entrega (opcional)</label>
+        <input id="me-foto" type="file" accept="image/*">
+        <div style="font-size:12px;color:var(--ink-faint);margin-top:5px">Registre onde a encomenda foi deixada. A foto fica salva no histórico.</div></div>
       <div class="form-foot"><button class="btn btn-ghost" id="me-cancel">Cancelar</button>
         <button class="btn btn-ok" id="me-ok">Confirmar entrega</button></div>
     </div></div>`;
@@ -593,6 +632,7 @@ function modalEntrega(e){
     });
   }
   $('#me-ok').addEventListener('click',async()=>{
+    const btn=$('#me-ok');
     const rec=$('#me-rec').value.trim(), data=$('#me-data').value, obs=$('#me-obs').value.trim();
     if(!rec||!data){toast('Preencha quem recebeu e a data.','err');return;}
     let upd={ status:'entregue', recebido_por:rec, data_entrega:data,
@@ -611,8 +651,21 @@ function modalEntrega(e){
     } else { // motorista finaliza como ele mesmo
       upd.tipo_entregador_final='motorista'; upd.entregador_final=perfil.nome; upd.entregador_final_id=perfil.id;
     }
+    // upload da foto (opcional)
+    const file=$('#me-foto').files[0];
+    if(file){
+      btn.disabled=true; btn.textContent='Enviando foto…';
+      try{
+        const blob=await comprimirImagem(file);
+        const path=`entrega_${e.id}_${Date.now()}.jpg`;
+        const {error:upErr}=await sb.storage.from('comprovantes').upload(path,blob,{contentType:'image/jpeg',upsert:false});
+        if(upErr){btn.disabled=false;btn.textContent='Confirmar entrega';toast('Erro ao enviar a foto: '+upErr.message,'err');return;}
+        upd.foto_entrega=path;
+      }catch(err){btn.disabled=false;btn.textContent='Confirmar entrega';toast('Não foi possível processar a foto.','err');return;}
+    }
+    btn.disabled=true; btn.textContent='Salvando…';
     const {error}=await sb.from('entregas').update(upd).eq('id',e.id);
-    if(error){toast(error.message,'err');return;}
+    if(error){btn.disabled=false;btn.textContent='Confirmar entrega';toast(error.message,'err');return;}
     bg.remove(); toast('Entrega registrada','ok'); await fetchEntregas(); renderList();
   });
 }
@@ -721,10 +774,10 @@ function exportXLSX(){
     'Tipo entregador':e.tipo_entregador_final?({motorista:'Motorista próprio',terceirizado:'Terceirizado'}[e.tipo_entregador_final]):'',
     'Recebido por (no destino)':e.recebido_por||'','Data Entrega':fmtDate(e.data_entrega),
     'Tempo (dias)': (e.data_entrega&&e.data_coleta)? ((new Date(e.data_entrega)-new Date(e.data_coleta))/86400000).toFixed(1):'',
-    'Obs. loja':e.observacoes||'','Obs. entrega':e.observacoes_entrega||''
+    'Obs. loja':e.observacoes||'','Obs. entrega':e.observacoes_entrega||'','Comprovante (foto)':e.foto_entrega?'Sim':''
   }));
   const ws=XLSX.utils.json_to_sheet(rows);
-  ws['!cols']=[{wch:14},{wch:12},{wch:18},{wch:26},{wch:22},{wch:24},{wch:40},{wch:18},{wch:18},{wch:20},{wch:16},{wch:22},{wch:12},{wch:11},{wch:28},{wch:28}];
+  ws['!cols']=[{wch:14},{wch:12},{wch:18},{wch:26},{wch:22},{wch:24},{wch:40},{wch:18},{wch:18},{wch:20},{wch:16},{wch:22},{wch:12},{wch:11},{wch:28},{wch:28},{wch:15}];
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Entregas');
   XLSX.writeFile(wb,`entregas_${todayISO()}.xlsx`);
   toast('Excel gerado','ok');
