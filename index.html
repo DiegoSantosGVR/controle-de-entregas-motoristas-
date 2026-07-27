@@ -461,24 +461,28 @@ async function viewEntregas(){
       <option value="">Todos</option><option value="pendente">Aguardando coleta</option>
       <option value="coletado">Disponível p/ entrega</option><option value="entregue">Entregue</option><option value="insucesso">Insucesso</option></select></div>
     ${perfil.papel==='admin'?`<div class="field"><label>Loja</label><select id="f-loja"><option value="">Todas</option>${lojasCache.map(l=>`<option>${esc(l)}</option>`).join('')}</select></div>`:''}
+    <div class="field"><label>Origem</label><select id="f-origem">
+      <option value="">Todas</option><option value="interno">Motorista interno</option><option value="terceiro">Via terceiro</option></select></div>
     <div class="field"><label>Coleta de</label><input id="f-de" type="date" value="${filtros.de}"></div>
     <div class="field"><label>até</label><input id="f-ate" type="date" value="${filtros.ate}"></div>`;
   m.appendChild(tb);
-  $('#f-status').value=filtros.status; if($('#f-loja'))$('#f-loja').value=filtros.loja;
-  ['f-busca','f-status','f-loja','f-de','f-ate'].forEach(id=>{ const e=$('#'+id); if(e) e.addEventListener('input',applyFilters); });
+  $('#f-status').value=filtros.status; if($('#f-loja'))$('#f-loja').value=filtros.loja; $('#f-origem').value=filtros.origem||'';
+  ['f-busca','f-status','f-loja','f-origem','f-de','f-ate'].forEach(id=>{ const e=$('#'+id); if(e) e.addEventListener('input',applyFilters); });
 
   const list=el('div','list'); list.id='entList'; m.appendChild(list);
   await fetchEntregas(); renderList();
 }
 function applyFilters(){
   filtros={busca:$('#f-busca').value.toLowerCase(),status:$('#f-status').value,
-    loja:$('#f-loja')?$('#f-loja').value:'',de:$('#f-de').value,ate:$('#f-ate').value};
+    loja:$('#f-loja')?$('#f-loja').value:'',origem:$('#f-origem').value,de:$('#f-de').value,ate:$('#f-ate').value};
   renderList();
 }
 function filtered(){
   return entregasCache.filter(e=>{
     if(filtros.status&&e.status!==filtros.status)return false;
     if(filtros.loja&&e.loja_solicitante!==filtros.loja)return false;
+    if(filtros.origem==='terceiro'&&!e.via_terceiro)return false;
+    if(filtros.origem==='interno'&&e.via_terceiro)return false;
     if(filtros.de&&e.data_coleta<filtros.de)return false;
     if(filtros.ate&&e.data_coleta>filtros.ate)return false;
     if(filtros.busca){const h=`${e.num_requisicao} ${e.nome_cliente} ${e.endereco_entrega} ${e.motorista} ${e.loja_solicitante}`.toLowerCase(); if(!h.includes(filtros.busca))return false;}
@@ -502,6 +506,11 @@ function cardEntrega(e){
       <div class="addr">${esc(e.endereco_entrega)}</div>
     </div><span class="chip ${e.status}">${STLBL[e.status]}</span>`;
   c.appendChild(top);
+  if(e.via_terceiro){
+    const tag=el('div',null,'🛵 Via terceiro');
+    tag.style.cssText='font-size:11px;font-weight:700;color:var(--brand);background:var(--brand-100);padding:3px 10px;border-radius:999px;margin:0 18px 2px;width:fit-content';
+    c.appendChild(tag);
+  }
 
   // trilha de status (elemento-assinatura)
   const tk=el('div','track');
@@ -513,7 +522,7 @@ function cardEntrega(e){
   const isFail = e.status==='insucesso';
   const steps=[
     {t:'Coleta na loja', who:esc(e.responsavel_entrega), when:fmtDT(e.criado_em), done:true},
-    {t:'Coletado pelo motorista', who:e.status!=='pendente'?esc(e.motorista):'', when:e.recebido_motorista_em?fmtDT(e.recebido_motorista_em):'aguardando', done:e.status!=='pendente'},
+    {t:e.via_terceiro?'Retirado pelo terceiro':'Coletado pelo motorista', who:e.status!=='pendente'?esc(e.motorista):'', when:e.recebido_motorista_em?fmtDT(e.recebido_motorista_em):'aguardando', done:e.status!=='pendente'},
     isFail
       ? {t:'Insucesso na entrega', who:finalLabel, when:e.insucesso_em?fmtDT(e.insucesso_em):'—', done:true, fail:true}
       : {t:'Entregue ao cliente', who:e.status==='entregue'?finalLabel:'', when:e.entregue_em?fmtDT(e.entregue_em):'aguardando', done:e.status==='entregue'}
@@ -562,12 +571,20 @@ function cardEntrega(e){
     }
     if(act.children.length) c.appendChild(act);
   }
-  // ações da loja (trocar coletador enquanto aguarda coleta)
-  if(perfil.papel==='loja' && e.status==='pendente'){
+  // ações da loja
+  if(perfil.papel==='loja'){
     const act=el('div','e-actions');
-    const t=el('button','btn btn-ghost btn-sm','🔄 Trocar motorista');
-    t.addEventListener('click',()=>modalTrocarMotorista(e)); act.appendChild(t);
-    c.appendChild(act);
+    if(e.status==='pendente' && !e.via_terceiro){
+      const t=el('button','btn btn-ghost btn-sm','🔄 Trocar motorista');
+      t.addEventListener('click',()=>modalTrocarMotorista(e)); act.appendChild(t);
+    }
+    if(e.status==='coletado' && e.via_terceiro){
+      const b=el('button','btn btn-ok btn-sm','📦 Registrar entrega');
+      b.addEventListener('click',()=>modalEntrega(e)); act.appendChild(b);
+      const f=el('button','btn btn-ghost btn-sm','⚠ Registrar insucesso'); f.style.color='var(--crit)';
+      f.addEventListener('click',()=>modalInsucesso(e)); act.appendChild(f);
+    }
+    if(act.children.length) c.appendChild(act);
   }
   // ações do admin
   if(perfil.papel==='admin'){
@@ -647,6 +664,8 @@ function modalInsucesso(e){
         if(!nm){toast('Informe o nome do terceirizado.','err');return;}
         upd.tipo_entregador_final='terceirizado'; upd.entregador_final=nm; upd.entregador_final_id=null;
       }
+    } else if(perfil.papel==='loja'){
+      upd.tipo_entregador_final='terceirizado'; upd.entregador_final=e.motorista; upd.entregador_final_id=null;
     } else {
       upd.tipo_entregador_final='motorista'; upd.entregador_final=perfil.nome; upd.entregador_final_id=perfil.id;
     }
@@ -783,6 +802,8 @@ function modalEntrega(e){
         if(!nm){toast('Informe o nome do terceirizado.','err');return;}
         upd.tipo_entregador_final='terceirizado'; upd.entregador_final=nm; upd.entregador_final_id=null;
       }
+    } else if(perfil.papel==='loja'){ // entrega via terceiro: finalizador é o próprio terceiro
+      upd.tipo_entregador_final='terceirizado'; upd.entregador_final=e.motorista; upd.entregador_final_id=null;
     } else { // motorista finaliza como ele mesmo
       upd.tipo_entregador_final='motorista'; upd.entregador_final=perfil.nome; upd.entregador_final_id=perfil.id;
     }
@@ -816,7 +837,7 @@ async function excluir(e){
 =================================================================== */
 function viewNova(){
   const m=$('#main'); m.innerHTML='';
-  m.appendChild(el('div','view-head','<div><h2>Nova entrega</h2><p>Substitui a requisição em papel. Defina o motorista que vai <b>retirar na loja</b> — a entrega final pode ser feita por ele, por outro motorista ou por um terceirizado.</p></div>'));
+  m.appendChild(el('div','view-head','<div><h2>Nova entrega</h2><p>Substitui a requisição em papel. A retirada pode ser por <b>motorista interno</b> ou <b>direto por um terceiro</b> (moto boy/transportadora).</p></div>'));
   const lojaFixa=perfil.papel==='loja';
   const card=el('div','card card-pad'); const f=el('div','form-grid');
   f.innerHTML=`
@@ -825,28 +846,53 @@ function viewNova(){
     <div class="field"><label>Loja solicitante *</label>${
       lojaFixa ? `<input id="n-loja" value="${esc(perfil.loja||'')}" disabled>`
       : `<select id="n-loja"><option value="">Selecione…</option>${lojasCache.map(l=>`<option>${esc(l)}</option>`).join('')}</select>`}</div>
-    <div class="field"><label>Responsável por entregar ao motorista *</label><input id="n-resp" placeholder="Nome de quem entrega a encomenda"></div>
-    <div class="field"><label>Motorista que retira na loja (coleta) *</label><select id="n-mot"><option value="">Selecione…</option>${
+    <div class="field"><label>Responsável por entregar a encomenda *</label><input id="n-resp" placeholder="Nome de quem entrega a encomenda"></div>
+    <div class="field full"><label>Forma de retirada *</label>
+      <select id="n-forma">
+        <option value="motorista">Motorista interno</option>
+        <option value="terceiro">Terceiro direto (moto boy / transportadora)</option>
+      </select></div>
+    <div class="field" id="wrap-mot"><label>Motorista que retira na loja (coleta) *</label><select id="n-mot"><option value="">Selecione…</option>${
       motoristasCache.map(mt=>`<option value="${mt.id}">${esc(mt.nome)}</option>`).join('')}</select></div>
+    <div class="field hidden" id="wrap-terc"><label>Nome do moto boy / terceiro *</label><input id="n-terc" placeholder="Ex.: Moto Express / João (moto boy)"></div>
     <div class="field"><label>Nome do cliente *</label><input id="n-cli" placeholder="Cliente destinatário"></div>
     <div class="field full"><label>Endereço completo da entrega *</label><textarea id="n-end" placeholder="Rua, número, complemento, bairro, cidade/UF, CEP"></textarea></div>
     <div class="field full"><label>Observações (opcional)</label><input id="n-obs" placeholder="Instruções, referências, etc."></div>`;
   card.appendChild(f);
+  const hint=el('p'); hint.style.cssText='font-size:12.5px;color:var(--ink-faint);margin:2px 0 0';
+  card.appendChild(hint);
   const foot=el('div','form-foot');
   const save=el('button','btn btn-primary','Lançar entrega');
   foot.appendChild(save); card.appendChild(foot); m.appendChild(card);
 
+  const aplicaForma=()=>{
+    const terc=$('#n-forma').value==='terceiro';
+    $('#wrap-mot').classList.toggle('hidden',terc);
+    $('#wrap-terc').classList.toggle('hidden',!terc);
+    hint.textContent = terc
+      ? 'Entrega despachada direto pelo terceiro: não passa pelos motoristas internos. A própria loja registra a entrega depois.'
+      : 'A entrega vai para o motorista interno confirmar a coleta e seguir o fluxo normal.';
+  };
+  $('#n-forma').addEventListener('change',aplicaForma); aplicaForma();
+
   save.addEventListener('click',async()=>{
     const loja = lojaFixa ? (perfil.loja||'') : $('#n-loja').value;
-    const motId=$('#n-mot').value;
-    const motNm=motoristasCache.find(x=>x.id===motId)?.nome||'';
+    const forma = $('#n-forma').value;
+    let motNm, motId=null, viaTerceiro=false, statusInicial='pendente', recebidoEm=null;
+    if(forma==='terceiro'){
+      motNm=$('#n-terc').value.trim(); viaTerceiro=true;
+      statusInicial='coletado'; recebidoEm=new Date().toISOString();
+    } else {
+      motId=$('#n-mot').value; motNm=motoristasCache.find(x=>x.id===motId)?.nome||'';
+    }
     const reg={
       num_requisicao:$('#n-req').value.trim(), data_coleta:$('#n-data').value,
       loja_solicitante:loja, responsavel_entrega:$('#n-resp').value.trim(),
-      motorista:motNm, motorista_id:motId||null,
+      motorista:motNm, motorista_id:motId||null, via_terceiro:viaTerceiro,
       nome_cliente:$('#n-cli').value.trim(), endereco_entrega:$('#n-end').value.trim(),
       observacoes:$('#n-obs').value.trim()||null,
-      status:'pendente', criado_por:perfil.id
+      status:statusInicial, recebido_motorista_em:recebidoEm, recebimento_confirmado:viaTerceiro,
+      criado_por:perfil.id
     };
     const faltando=['num_requisicao','data_coleta','loja_solicitante','responsavel_entrega','motorista','nome_cliente','endereco_entrega']
       .filter(k=>!reg[k]);
@@ -902,7 +948,7 @@ function exportXLSX(){
   const rows=data.map(e=>({
     'Nº Requisição':e.num_requisicao,'Data Coleta':fmtDate(e.data_coleta),
     'Loja Solicitante':e.loja_solicitante,'Entregou ao motorista (loja)':e.responsavel_entrega,
-    'Coletador (retirou na loja)':e.motorista,'Cliente':e.nome_cliente,'Endereço':e.endereco_entrega,
+    'Coletador (retirou na loja)':e.motorista,'Origem':e.via_terceiro?'Terceiro direto':'Motorista interno','Cliente':e.nome_cliente,'Endereço':e.endereco_entrega,
     'Status':STLBL[e.status],
     'Coletado em':fmtDT(e.recebido_motorista_em),
     'Entregador final':e.entregador_final||'',
@@ -914,7 +960,7 @@ function exportXLSX(){
     'Obs. loja':e.observacoes||'','Obs. entrega':e.observacoes_entrega||'','Comprovante (foto)':e.foto_entrega?'Sim':''
   }));
   const ws=XLSX.utils.json_to_sheet(rows);
-  ws['!cols']=[{wch:14},{wch:12},{wch:18},{wch:26},{wch:22},{wch:24},{wch:40},{wch:18},{wch:18},{wch:20},{wch:16},{wch:22},{wch:12},{wch:18},{wch:30},{wch:26},{wch:11},{wch:28},{wch:28},{wch:15}];
+  ws['!cols']=[{wch:14},{wch:12},{wch:18},{wch:26},{wch:22},{wch:16},{wch:24},{wch:40},{wch:18},{wch:18},{wch:20},{wch:16},{wch:22},{wch:12},{wch:18},{wch:30},{wch:26},{wch:11},{wch:28},{wch:28},{wch:15}];
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Entregas');
   XLSX.writeFile(wb,`entregas_${todayISO()}.xlsx`);
   toast('Excel gerado','ok');
