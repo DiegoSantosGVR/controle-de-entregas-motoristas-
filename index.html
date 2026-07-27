@@ -121,6 +121,7 @@ main{max-width:1140px;margin:0 auto;padding:clamp(16px,4vw,28px);}
 .kpi .val small{font-size:15px;color:var(--ink-soft);font-weight:500}
 .kpi .meta{font-size:12.5px;color:var(--ink-faint);margin-top:6px}
 .kpi.accent-ok .val{color:var(--ok)} .kpi.accent-brand .val{color:var(--brand)}
+.kpi.accent-crit .val{color:var(--crit)}
 .kpi.accent-pend .val{color:var(--pend)} .kpi.accent-info .val{color:var(--info)}
 
 /* bar chart */
@@ -147,6 +148,10 @@ main{max-width:1140px;margin:0 auto;padding:clamp(16px,4vw,28px);}
 .chip.pendente{background:var(--pend-bg);color:var(--pend)}
 .chip.coletado{background:var(--brand-100);color:var(--brand)}
 .chip.entregue{background:var(--ok-bg);color:var(--ok)}
+.chip.insucesso{background:var(--crit-bg);color:var(--crit)}
+.step.fail .ico{background:var(--crit);color:#fff}
+.step.fail::before{background:var(--crit)}
+.step.fail .p{color:var(--crit)}
 
 .track{display:flex;align-items:flex-start;padding:4px 18px 16px;gap:0}
 .step{flex:1;display:flex;flex-direction:column;align-items:center;text-align:center;position:relative;min-width:0}
@@ -156,6 +161,7 @@ main{max-width:1140px;margin:0 auto;padding:clamp(16px,4vw,28px);}
 .step.done .ico{background:var(--ok);color:#fff}
 .step.current .ico{background:var(--brand);color:#fff}
 .step .t{font-size:12px;font-weight:700;margin-top:7px;color:var(--ink)}
+.step .p{font-size:11.5px;font-weight:700;color:var(--brand);margin-top:5px;line-height:1.25;padding:0 2px}
 .step .d{font-size:11.5px;color:var(--ink-faint);margin-top:2px;line-height:1.3}
 .step:not(:first-child)::before{content:"";position:absolute;top:14px;left:-50%;width:100%;
   height:2.5px;background:var(--line);z-index:1}
@@ -282,7 +288,7 @@ const esc=s=>(s??'').toString().replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','
 const fmtDate=d=>{ if(!d) return '—'; const p=d.toString().slice(0,10).split('-'); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:d; };
 const fmtDT=t=>{ if(!t) return '—'; const x=new Date(t); return x.toLocaleDateString('pt-BR')+' '+x.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); };
 const todayISO=()=>new Date().toISOString().slice(0,10);
-const STLBL={pendente:'Aguardando coleta',coletado:'Disponível p/ entrega',entregue:'Entregue'};
+const STLBL={pendente:'Aguardando coleta',coletado:'Disponível p/ entrega',entregue:'Entregue',insucesso:'Insucesso'};
 
 function toast(msg,kind=''){ const t=$('#toast'); t.textContent=msg; t.className=kind; void t.offsetWidth; t.classList.add('show',kind); setTimeout(()=>t.classList.remove('show'),2800); }
 
@@ -377,12 +383,14 @@ async function viewPainel(){
   const entregues=data.filter(e=>e.status==='entregue'&&e.data_entrega&&e.data_coleta);
   const dias=entregues.map(e=>(new Date(e.data_entrega)-new Date(e.data_coleta))/86400000).filter(d=>d>=0);
   const tempoMedio=dias.length?(dias.reduce((a,b)=>a+b,0)/dias.length):null;
-  const pendentes=data.filter(e=>e.status!=='entregue').length;
+  const pendentes=data.filter(e=>e.status==='pendente'||e.status==='coletado').length;
+  const insucessos=data.filter(e=>e.status==='insucesso').length;
 
   grid.appendChild(kpi('Tempo médio de entrega', tempoMedio==null?'—':tempoMedio.toFixed(1), tempoMedio==null?'sem dados':'dias · da coleta à entrega', 'accent-info'));
   grid.appendChild(kpi('Total de entregas', data.length, 'lançadas no sistema', 'accent-brand'));
   grid.appendChild(kpi('Concluídas', entregues.length, 'entregues ao cliente', 'accent-ok'));
   grid.appendChild(kpi('Em aberto', pendentes, 'aguardando coleta/entrega', 'accent-pend'));
+  grid.appendChild(kpi('Insucessos', insucessos, data.length?('· '+(insucessos/data.length*100).toFixed(1)+'% do total'):'sem dados', 'accent-crit'));
 
   // KPI 2: quantidade por loja
   const porLoja={}; data.forEach(e=>porLoja[e.loja_solicitante]=(porLoja[e.loja_solicitante]||0)+1);
@@ -451,7 +459,7 @@ async function viewEntregas(){
     <div class="field"><label>Buscar</label><input id="f-busca" placeholder="cliente, requisição, endereço…" value="${esc(filtros.busca)}"></div>
     <div class="field"><label>Status</label><select id="f-status">
       <option value="">Todos</option><option value="pendente">Aguardando coleta</option>
-      <option value="coletado">Disponível p/ entrega</option><option value="entregue">Entregue</option></select></div>
+      <option value="coletado">Disponível p/ entrega</option><option value="entregue">Entregue</option><option value="insucesso">Insucesso</option></select></div>
     ${perfil.papel==='admin'?`<div class="field"><label>Loja</label><select id="f-loja"><option value="">Todas</option>${lojasCache.map(l=>`<option>${esc(l)}</option>`).join('')}</select></div>`:''}
     <div class="field"><label>Coleta de</label><input id="f-de" type="date" value="${filtros.de}"></div>
     <div class="field"><label>até</label><input id="f-ate" type="date" value="${filtros.ate}"></div>`;
@@ -501,17 +509,22 @@ function cardEntrega(e){
   const finalLabel = e.entregador_final
         ? (e.tipo_entregador_final==='terceirizado' ? esc(e.entregador_final)+' (terceiro)' : esc(e.entregador_final))
         : '';
+  const xI='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6L6 18M6 6l12 12"/></svg>';
+  const isFail = e.status==='insucesso';
   const steps=[
-    {t:'Coleta na loja', d:fmtDate(e.data_coleta), done:true},
-    {t:'Coletado pelo motorista', d:e.recebido_motorista_em?(esc(e.motorista)+' · '+fmtDT(e.recebido_motorista_em)):'aguardando', done:e.status!=='pendente'},
-    {t:'Entregue ao cliente', d:e.data_entrega?((finalLabel?finalLabel+' · ':'')+fmtDate(e.data_entrega)):'aguardando', done:e.status==='entregue'}
+    {t:'Coleta na loja', who:esc(e.responsavel_entrega), when:fmtDT(e.criado_em), done:true},
+    {t:'Coletado pelo motorista', who:e.status!=='pendente'?esc(e.motorista):'', when:e.recebido_motorista_em?fmtDT(e.recebido_motorista_em):'aguardando', done:e.status!=='pendente'},
+    isFail
+      ? {t:'Insucesso na entrega', who:finalLabel, when:e.insucesso_em?fmtDT(e.insucesso_em):'—', done:true, fail:true}
+      : {t:'Entregue ao cliente', who:e.status==='entregue'?finalLabel:'', when:e.entregue_em?fmtDT(e.entregue_em):'aguardando', done:e.status==='entregue'}
   ];
   let curSet=false;
   steps.forEach((s,i)=>{
     const st=el('div','step');
-    let cls=''; if(s.done){cls='done';} else if(!curSet){cls='current';curSet=true;}
+    let cls=''; if(s.fail){cls='fail';} else if(s.done){cls='done';} else if(!curSet){cls='current';curSet=true;}
     st.className='step '+cls;
-    st.innerHTML=`<div class="ico">${s.done?checkI:(i+1)}</div><div class="t">${s.t}</div><div class="d">${esc(s.d)}</div>`;
+    const ico = s.fail ? xI : (s.done?checkI:(i+1));
+    st.innerHTML=`<div class="ico">${ico}</div><div class="t">${s.t}</div>${s.who?`<div class="p">${s.who}</div>`:''}<div class="d">${esc(s.when)}</div>`;
     tk.appendChild(st);
   });
   c.appendChild(tk);
@@ -519,8 +532,12 @@ function cardEntrega(e){
   const meta=el('div','e-meta');
   meta.innerHTML=`<span>Coletador: <b>${esc(e.motorista)}</b></span>
     <span>Entregou ao motorista (loja): <b>${esc(e.responsavel_entrega)}</b></span>
+    <span>Data de coleta: <b>${fmtDate(e.data_coleta)}</b></span>
     ${e.entregador_final?`<span>Entregador final: <b>${esc(e.entregador_final)}${e.tipo_entregador_final==='terceirizado'?' (terceiro)':''}</b></span>`:''}
     ${e.recebido_por?`<span>Recebido por: <b>${esc(e.recebido_por)}</b></span>`:''}
+    ${e.data_entrega?`<span>Data de entrega: <b>${fmtDate(e.data_entrega)}</b></span>`:''}
+    ${e.motivo_insucesso?`<span>Motivo do insucesso: <b>${esc(e.motivo_insucesso)}</b></span>`:''}
+    ${e.destino_encomenda?`<span>Destino da encomenda: <b>${esc(e.destino_encomenda)}</b></span>`:''}
     ${e.observacoes?`<span>Obs. loja: ${esc(e.observacoes)}</span>`:''}
     ${e.observacoes_entrega?`<span>Obs. entrega: ${esc(e.observacoes_entrega)}</span>`:''}`;
   c.appendChild(meta);
@@ -540,6 +557,8 @@ function cardEntrega(e){
     } else if(e.status==='coletado'){
       const b=el('button','btn btn-ok btn-sm','📦 Registrar entrega ao cliente');
       b.addEventListener('click',()=>modalEntrega(e)); act.appendChild(b);
+      const f=el('button','btn btn-ghost btn-sm','⚠ Registrar insucesso'); f.style.color='var(--crit)';
+      f.addEventListener('click',()=>modalInsucesso(e)); act.appendChild(f);
     }
     if(act.children.length) c.appendChild(act);
   }
@@ -560,6 +579,8 @@ function cardEntrega(e){
     if(e.status==='coletado'){
       const b=el('button','btn btn-ok btn-sm','📦 Registrar entrega');
       b.addEventListener('click',()=>modalEntrega(e)); act.appendChild(b);
+      const f=el('button','btn btn-ghost btn-sm','⚠ Registrar insucesso'); f.style.color='var(--crit)';
+      f.addEventListener('click',()=>modalInsucesso(e)); act.appendChild(f);
     }
     const d=el('button','btn btn-ghost btn-sm','Excluir'); d.style.color='var(--crit)';
     d.addEventListener('click',()=>excluir(e)); act.appendChild(d);
@@ -568,6 +589,84 @@ function cardEntrega(e){
   return c;
 }
 
+function modalInsucesso(e){
+  const isAdmin = perfil.papel==='admin';
+  const bg=el('div','modal-bg');
+  const adminBloco = isAdmin ? `
+      <div class="field"><label>Quem tentou a entrega? *</label>
+        <select id="ins-tipo">
+          <option value="motorista">Motorista próprio</option>
+          <option value="terceirizado">Terceirizado (moto boy / outra empresa)</option>
+        </select></div>
+      <div class="field" id="ins-mot-wrap"><label>Motorista *</label>
+        <select id="ins-mot"><option value="">Selecione…</option>${
+          motoristasCache.map(mt=>`<option value="${mt.id}">${esc(mt.nome)}</option>`).join('')}</select></div>
+      <div class="field hidden" id="ins-terc-wrap"><label>Nome do terceirizado *</label>
+        <input id="ins-terc" placeholder="Ex.: Moto Express / João (moto boy)"></div>` : '';
+  const motivos=['Endereço incorreto','Ninguém no local para receber','Cliente ausente / recusou o recebimento','Local de difícil acesso ou risco','Outro'];
+  const destinos=['Retornar ao Centro de Distribuição','Devolver à loja de origem','Reagendar nova tentativa','Aguardando instrução','Outro'];
+  bg.innerHTML=`<div class="modal"><div class="modal-head"><h3>Registrar insucesso na entrega</h3>
+      <p>RE ${esc(e.num_requisicao)} · ${esc(e.nome_cliente)} · coletada por ${esc(e.motorista)}</p></div>
+    <div class="modal-body">
+      ${adminBloco}
+      <div class="field"><label>Motivo do insucesso *</label>
+        <select id="ins-motivo"><option value="">Selecione…</option>${motivos.map(m=>`<option>${esc(m)}</option>`).join('')}</select></div>
+      <div class="field"><label>Detalhe / observação (opcional)</label><textarea id="ins-det" placeholder="Descreva o que aconteceu"></textarea></div>
+      <div class="field"><label>O que será feito com a encomenda? *</label>
+        <select id="ins-dest"><option value="">Selecione…</option>${destinos.map(d=>`<option>${esc(d)}</option>`).join('')}</select></div>
+      <div class="field"><label>Foto (opcional)</label>
+        <input id="ins-foto" type="file" accept="image/*">
+        <div style="font-size:12px;color:var(--ink-faint);margin-top:5px">Ex.: foto do endereço ou do local, como evidência.</div></div>
+      <div class="form-foot"><button class="btn btn-ghost" id="ins-cancel">Cancelar</button>
+        <button class="btn btn-ok" id="ins-ok" style="background:var(--crit)">Confirmar insucesso</button></div>
+    </div></div>`;
+  document.body.appendChild(bg);
+  bg.addEventListener('click',ev=>{if(ev.target===bg)bg.remove();});
+  $('#ins-cancel').addEventListener('click',()=>bg.remove());
+  if(isAdmin){
+    $('#ins-tipo').addEventListener('change',ev=>{
+      const terc=ev.target.value==='terceirizado';
+      $('#ins-mot-wrap').classList.toggle('hidden',terc);
+      $('#ins-terc-wrap').classList.toggle('hidden',!terc);
+    });
+  }
+  $('#ins-ok').addEventListener('click',async()=>{
+    const btn=$('#ins-ok');
+    const motivo=$('#ins-motivo').value, det=$('#ins-det').value.trim(), dest=$('#ins-dest').value;
+    if(!motivo||!dest){toast('Informe o motivo e o destino da encomenda.','err');return;}
+    let upd={ status:'insucesso', insucesso_em:new Date().toISOString(),
+      motivo_insucesso: motivo + (det? ' — '+det : ''), destino_encomenda: dest };
+    if(isAdmin){
+      const tipo=$('#ins-tipo').value;
+      if(tipo==='motorista'){
+        const id=$('#ins-mot').value; const nm=motoristasCache.find(x=>x.id===id)?.nome||'';
+        if(!id){toast('Selecione o motorista.','err');return;}
+        upd.tipo_entregador_final='motorista'; upd.entregador_final=nm; upd.entregador_final_id=id;
+      } else {
+        const nm=$('#ins-terc').value.trim();
+        if(!nm){toast('Informe o nome do terceirizado.','err');return;}
+        upd.tipo_entregador_final='terceirizado'; upd.entregador_final=nm; upd.entregador_final_id=null;
+      }
+    } else {
+      upd.tipo_entregador_final='motorista'; upd.entregador_final=perfil.nome; upd.entregador_final_id=perfil.id;
+    }
+    const file=$('#ins-foto').files[0];
+    if(file){
+      btn.disabled=true; btn.textContent='Enviando foto…';
+      try{
+        const blob=await comprimirImagem(file);
+        const path=`insucesso_${e.id}_${Date.now()}.jpg`;
+        const {error:upErr}=await sb.storage.from('comprovantes').upload(path,blob,{contentType:'image/jpeg',upsert:false});
+        if(upErr){btn.disabled=false;btn.textContent='Confirmar insucesso';toast('Erro ao enviar a foto: '+upErr.message,'err');return;}
+        upd.foto_entrega=path;
+      }catch(err){btn.disabled=false;btn.textContent='Confirmar insucesso';toast('Não foi possível processar a foto.','err');return;}
+    }
+    btn.disabled=true; btn.textContent='Salvando…';
+    const {error}=await sb.from('entregas').update(upd).eq('id',e.id);
+    if(error){btn.disabled=false;btn.textContent='Confirmar insucesso';toast(error.message,'err');return;}
+    bg.remove(); toast('Insucesso registrado','ok'); await fetchEntregas(); renderList();
+  });
+}
 function modalTrocarMotorista(e){
   const bg=el('div','modal-bg');
   bg.innerHTML=`<div class="modal"><div class="modal-head"><h3>Trocar motorista da coleta</h3>
@@ -809,11 +908,13 @@ function exportXLSX(){
     'Entregador final':e.entregador_final||'',
     'Tipo entregador':e.tipo_entregador_final?({motorista:'Motorista próprio',terceirizado:'Terceirizado'}[e.tipo_entregador_final]):'',
     'Recebido por (no destino)':e.recebido_por||'','Data Entrega':fmtDate(e.data_entrega),
+    'Insucesso em':fmtDT(e.insucesso_em),
+    'Motivo do insucesso':e.motivo_insucesso||'','Destino da encomenda':e.destino_encomenda||'',
     'Tempo (dias)': (e.data_entrega&&e.data_coleta)? ((new Date(e.data_entrega)-new Date(e.data_coleta))/86400000).toFixed(1):'',
     'Obs. loja':e.observacoes||'','Obs. entrega':e.observacoes_entrega||'','Comprovante (foto)':e.foto_entrega?'Sim':''
   }));
   const ws=XLSX.utils.json_to_sheet(rows);
-  ws['!cols']=[{wch:14},{wch:12},{wch:18},{wch:26},{wch:22},{wch:24},{wch:40},{wch:18},{wch:18},{wch:20},{wch:16},{wch:22},{wch:12},{wch:11},{wch:28},{wch:28},{wch:15}];
+  ws['!cols']=[{wch:14},{wch:12},{wch:18},{wch:26},{wch:22},{wch:24},{wch:40},{wch:18},{wch:18},{wch:20},{wch:16},{wch:22},{wch:12},{wch:18},{wch:30},{wch:26},{wch:11},{wch:28},{wch:28},{wch:15}];
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Entregas');
   XLSX.writeFile(wb,`entregas_${todayISO()}.xlsx`);
   toast('Excel gerado','ok');
