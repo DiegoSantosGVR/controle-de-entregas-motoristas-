@@ -541,18 +541,13 @@ function cardEntrega(e){
   });
   c.appendChild(tk);
 
-  const meta=el('div','e-meta');
-  meta.innerHTML=`<span>Coletador: <b>${esc(e.motorista)}</b></span>
-    <span>Entregou ao motorista (loja): <b>${esc(e.responsavel_entrega)}</b></span>
-    <span>Data de coleta: <b>${fmtDate(e.data_coleta)}</b></span>
-    ${e.entregador_final?`<span>Entregador final: <b>${esc(e.entregador_final)}${e.tipo_entregador_final==='terceirizado'?' (terceiro)':''}</b></span>`:''}
-    ${e.recebido_por?`<span>Recebido por: <b>${esc(e.recebido_por)}</b></span>`:''}
-    ${e.data_entrega?`<span>Data de entrega: <b>${fmtDate(e.data_entrega)}</b></span>`:''}
-    ${e.motivo_insucesso?`<span>Motivo do insucesso: <b>${esc(e.motivo_insucesso)}</b></span>`:''}
-    ${e.destino_encomenda?`<span>Destino da encomenda: <b>${esc(e.destino_encomenda)}</b></span>`:''}
-    ${e.observacoes?`<span>Obs. loja: ${esc(e.observacoes)}</span>`:''}
-    ${e.observacoes_entrega?`<span>Obs. entrega: ${esc(e.observacoes_entrega)}</span>`:''}`;
-  c.appendChild(meta);
+  const partes=[];
+  if(e.observacoes)         partes.push(`<span>Obs. loja: ${esc(e.observacoes)}</span>`);
+  if(e.recebido_por)        partes.push(`<span>Recebido por: <b>${esc(e.recebido_por)}</b></span>`);
+  if(e.observacoes_entrega) partes.push(`<span>Obs. entrega: ${esc(e.observacoes_entrega)}</span>`);
+  if(e.motivo_insucesso)    partes.push(`<span>Motivo do insucesso: <b>${esc(e.motivo_insucesso)}</b></span>`);
+  if(e.destino_encomenda)   partes.push(`<span>Destino da encomenda: <b>${esc(e.destino_encomenda)}</b></span>`);
+  if(partes.length){ const meta=el('div','e-meta'); meta.innerHTML=partes.join('\n'); c.appendChild(meta); }
   if(e.foto_entrega){
     const fb=el('button','btn btn-ghost btn-sm','📷 Ver comprovante');
     fb.style.margin='0 18px 14px'; fb.style.width='fit-content';
