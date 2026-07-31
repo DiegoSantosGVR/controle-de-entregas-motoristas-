@@ -520,12 +520,15 @@ function cardEntrega(e){
         : '';
   const xI='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6L6 18M6 6l12 12"/></svg>';
   const isFail = e.status==='insucesso';
+  const feito2 = e.status!=='pendente';
+  const rotulo2 = feito2 ? (e.via_terceiro?'Retirado por':'Coletado por') : 'Coleta pendente';
+  const rotulo3 = isFail ? 'Insucesso por' : (e.status==='entregue' ? 'Entregue por' : 'Entrega pendente');
   const steps=[
-    {t:'Coleta na loja', who:esc(e.responsavel_entrega), when:fmtDT(e.criado_em), done:true},
-    {t:e.via_terceiro?'Retirado pelo terceiro':'Coletado pelo motorista', who:e.status!=='pendente'?esc(e.motorista):'', when:e.recebido_motorista_em?fmtDT(e.recebido_motorista_em):'aguardando', done:e.status!=='pendente'},
+    {t:'Disponibilizado por', who:esc(e.responsavel_entrega), when:fmtDT(e.criado_em), done:true},
+    {t:rotulo2, who:feito2?esc(e.motorista):'', when:e.recebido_motorista_em?fmtDT(e.recebido_motorista_em):'aguardando', done:feito2},
     isFail
-      ? {t:'Insucesso na entrega', who:finalLabel, when:e.insucesso_em?fmtDT(e.insucesso_em):'—', done:true, fail:true}
-      : {t:'Entregue ao cliente', who:e.status==='entregue'?finalLabel:'', when:e.entregue_em?fmtDT(e.entregue_em):'aguardando', done:e.status==='entregue'}
+      ? {t:rotulo3, who:finalLabel, when:e.insucesso_em?fmtDT(e.insucesso_em):'—', done:true, fail:true}
+      : {t:rotulo3, who:e.status==='entregue'?finalLabel:'', when:e.entregue_em?fmtDT(e.entregue_em):'aguardando', done:e.status==='entregue'}
   ];
   let curSet=false;
   steps.forEach((s,i)=>{
