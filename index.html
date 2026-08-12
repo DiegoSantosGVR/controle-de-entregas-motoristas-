@@ -511,6 +511,11 @@ function cardEntrega(e){
     tag.style.cssText='font-size:11px;font-weight:700;color:var(--brand);background:var(--brand-100);padding:3px 10px;border-radius:999px;margin:0 18px 2px;width:fit-content';
     c.appendChild(tag);
   }
+  if(e.status==='pendente' && !e.via_terceiro && e.motorista_id==null){
+    const tag=el('div',null,'📢 Coleta em aberto');
+    tag.style.cssText='font-size:11px;font-weight:700;color:var(--pend);background:var(--pend-bg);padding:3px 10px;border-radius:999px;margin:0 18px 2px;width:fit-content';
+    c.appendChild(tag);
+  }
 
   // trilha de status (elemento-assinatura)
   const tk=el('div','track');
@@ -558,7 +563,7 @@ function cardEntrega(e){
   // ações do motorista
   if(perfil.papel==='motorista'){
     const act=el('div','e-actions');
-    if(e.status==='pendente' && e.motorista_id===perfil.id){
+    if(e.status==='pendente' && !e.via_terceiro && (e.motorista_id===perfil.id || e.motorista_id==null)){
       const b=el('button','btn btn-primary btn-sm','✓ Confirmar coleta');
       b.addEventListener('click',()=>confirmarColeta(e)); act.appendChild(b);
     } else if(e.status==='coletado'){
@@ -710,10 +715,12 @@ function modalTrocarMotorista(e){
 }
 
 async function confirmarColeta(e){
-  const {error}=await sb.from('entregas').update({
-    status:'coletado',recebimento_confirmado:true,recebido_motorista_em:new Date().toISOString()
-  }).eq('id',e.id);
+  const {data,error}=await sb.from('entregas').update({
+    motorista_id:perfil.id, motorista:perfil.nome,
+    status:'coletado', recebimento_confirmado:true, recebido_motorista_em:new Date().toISOString()
+  }).eq('id',e.id).eq('status','pendente').select();
   if(error){toast(error.message,'err');return;}
+  if(!data||!data.length){ toast('Esta entrega já foi coletada por outro motorista.','err'); await fetchEntregas(); renderList(); return; }
   toast('Coleta confirmada','ok'); await fetchEntregas(); renderList();
 }
 function comprimirImagem(file, max=1280, q=0.72){
@@ -850,7 +857,7 @@ function viewNova(){
         <option value="motorista">Motorista interno</option>
         <option value="terceiro">Terceiro direto (moto boy / transportadora)</option>
       </select></div>
-    <div class="field" id="wrap-mot"><label>Motorista que retira na loja (coleta) *</label><select id="n-mot"><option value="">Selecione…</option>${
+    <div class="field" id="wrap-mot"><label>Motorista que retira na loja (coleta) *</label><select id="n-mot"><option value="any">Qualquer motorista disponível (definir na coleta)</option>${
       motoristasCache.map(mt=>`<option value="${mt.id}">${esc(mt.nome)}</option>`).join('')}</select></div>
     <div class="field hidden" id="wrap-terc"><label>Nome do moto boy / terceiro *</label><input id="n-terc" placeholder="Ex.: Moto Express / João (moto boy)"></div>
     <div class="field"><label>Nome do cliente *</label><input id="n-cli" placeholder="Cliente destinatário"></div>
@@ -876,12 +883,14 @@ function viewNova(){
   save.addEventListener('click',async()=>{
     const loja = lojaFixa ? (perfil.loja||'') : $('#n-loja').value;
     const forma = $('#n-forma').value;
-    let motNm, motId=null, viaTerceiro=false, statusInicial='pendente', recebidoEm=null;
+    let motNm='', motId=null, viaTerceiro=false, statusInicial='pendente', recebidoEm=null;
     if(forma==='terceiro'){
       motNm=$('#n-terc').value.trim(); viaTerceiro=true;
       statusInicial='coletado'; recebidoEm=new Date().toISOString();
     } else {
-      motId=$('#n-mot').value; motNm=motoristasCache.find(x=>x.id===motId)?.nome||'';
+      const sel=$('#n-mot').value;
+      if(sel && sel!=='any'){ motId=sel; motNm=motoristasCache.find(x=>x.id===sel)?.nome||''; }
+      // sel==='any' → sem motorista definido (pool de coleta aberto)
     }
     const reg={
       num_requisicao:$('#n-req').value.trim(), data_coleta:$('#n-data').value,
@@ -892,7 +901,8 @@ function viewNova(){
       status:statusInicial, recebido_motorista_em:recebidoEm, recebimento_confirmado:viaTerceiro,
       criado_por:perfil.id
     };
-    const faltando=['num_requisicao','data_coleta','loja_solicitante','responsavel_entrega','motorista','nome_cliente','endereco_entrega']
+    if(forma==='terceiro' && !motNm){toast('Informe o nome do moto boy / terceiro.','err');return;}
+    const faltando=['num_requisicao','data_coleta','loja_solicitante','responsavel_entrega','nome_cliente','endereco_entrega']
       .filter(k=>!reg[k]);
     if(faltando.length){toast('Preencha todos os campos obrigatórios (*).','err');return;}
     save.disabled=true; save.textContent='Salvando…';
