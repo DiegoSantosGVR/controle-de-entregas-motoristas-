@@ -122,6 +122,7 @@ main{max-width:1140px;margin:0 auto;padding:clamp(16px,4vw,28px);}
 .kpi .meta{font-size:12.5px;color:var(--ink-faint);margin-top:6px}
 .kpi.accent-ok .val{color:var(--ok)} .kpi.accent-brand .val{color:var(--brand)}
 .kpi.accent-crit .val{color:var(--crit)}
+.kpi.accent-coleta .val{color:#6D5AA6}
 .kpi.accent-pend .val{color:var(--pend)} .kpi.accent-info .val{color:var(--info)}
 
 /* bar chart */
@@ -390,10 +391,13 @@ async function viewPainel(){
   const tempoMedio=dias.length?(dias.reduce((a,b)=>a+b,0)/dias.length):null;
   const pendentes=data.filter(e=>e.status==='pendente'||e.status==='coletado').length;
   const insucessos=data.filter(e=>e.status==='insucesso').length;
+  const qtdColetas=data.filter(e=>e.tipo_servico==='coleta').length;
+  const qtdEntregas=data.length - qtdColetas;
 
-  grid.appendChild(kpi('Tempo médio de entrega', tempoMedio==null?'—':tempoMedio.toFixed(1), tempoMedio==null?'sem dados':'dias · da coleta à entrega', 'accent-info'));
-  grid.appendChild(kpi('Total de entregas', data.length, 'lançadas no sistema', 'accent-brand'));
-  grid.appendChild(kpi('Concluídas', entregues.length, 'entregues ao cliente', 'accent-ok'));
+  grid.appendChild(kpi('Tempo médio de entrega/coleta', tempoMedio==null?'—':tempoMedio.toFixed(1), tempoMedio==null?'sem dados':'dias · da coleta à conclusão', 'accent-info'));
+  grid.appendChild(kpi('Entregas', qtdEntregas, 'do tipo entrega', 'accent-brand'));
+  grid.appendChild(kpi('Coletas', qtdColetas, 'do tipo coleta', 'accent-coleta'));
+  grid.appendChild(kpi('Concluídas', entregues.length, 'finalizadas (entrega/coleta)', 'accent-ok'));
   grid.appendChild(kpi('Em aberto', pendentes, 'aguardando coleta/entrega', 'accent-pend'));
   grid.appendChild(kpi('Insucessos', insucessos, data.length?('· '+(insucessos/data.length*100).toFixed(1)+'% do total'):'sem dados', 'accent-crit'));
 
