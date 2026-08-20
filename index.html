@@ -351,9 +351,9 @@ async function loadRefs(){
 =================================================================== */
 function buildTabs(){
   const tabs={
-    admin:[['painel','Painel · KPIs'],['entregas','Entregas'],['nova','Nova entrega'],['usuarios','Usuários']],
-    loja:[['nova','Nova entrega'],['entregas','Minhas entregas']],
-    motorista:[['entregas','Minhas entregas']]
+    admin:[['painel','Painel · KPIs'],['entregas','Entregas/coletas'],['nova','Nova entrega/coleta'],['usuarios','Usuários']],
+    loja:[['nova','Nova entrega/coleta'],['entregas','Minhas entregas/coletas']],
+    motorista:[['entregas','Minhas entregas/coletas']]
   }[perfil.papel];
   const nav=$('#tabs'); nav.innerHTML='';
   tabs.forEach(([id,lbl])=>{
@@ -405,7 +405,7 @@ async function viewPainel(){
   const porLoja={}; data.forEach(e=>porLoja[e.loja_solicitante]=(porLoja[e.loja_solicitante]||0)+1);
   const rows=Object.entries(porLoja).sort((a,b)=>b[1]-a[1]);
   const card=el('div','card card-pad'); card.style.marginBottom='18px';
-  card.appendChild(el('h3',null,'Quantidade de entregas por loja'));
+  card.appendChild(el('h3',null,'Quantidade de entregas/coletas por loja'));
   card.appendChild(el('p',null,'<span style="color:var(--ink-soft);font-size:13px">Volume lançado por loja solicitante.</span>'));
   const chart=el('div'); chart.style.marginTop='12px';
   if(!rows.length){ chart.appendChild(el('div','empty','<b>Sem entregas ainda</b>')); }
@@ -426,7 +426,7 @@ async function viewPainel(){
   const tmRows=Object.entries(tmLoja).map(([nm,arr])=>[nm,arr.reduce((a,b)=>a+b,0)/arr.length]).sort((a,b)=>a[1]-b[1]);
   if(tmRows.length){
     const c2=el('div','card card-pad');
-    c2.appendChild(el('h3',null,'Tempo médio de entrega por loja'));
+    c2.appendChild(el('h3',null,'Tempo médio de entrega/coleta por loja'));
     c2.appendChild(el('p',null,'<span style="color:var(--ink-soft);font-size:13px">Média de dias da coleta à entrega — menor é melhor.</span>'));
     const ch=el('div'); ch.style.marginTop='12px'; const mx=Math.max(...tmRows.map(r=>r[1]))||1;
     tmRows.forEach(([nm,d])=>{
@@ -453,10 +453,10 @@ let filtros={busca:'',status:'',loja:'',de:'',ate:''};
 async function viewEntregas(){
   const m=$('#main'); m.innerHTML='';
   const head=el('div','view-head');
-  head.innerHTML=`<div><h2>${perfil.papel==='admin'?'Entregas':'Minhas entregas'}</h2><p>${
-    perfil.papel==='motorista'?'Confirme a coleta das suas retiradas e finalize as entregas disponíveis no pool.':
-    perfil.papel==='loja'?'Acompanhe o andamento das suas requisições.':
-    'Todas as entregas lançadas pelas lojas.'}</p></div>`;
+  head.innerHTML=`<div><h2>${perfil.papel==='admin'?'Entregas e coletas':'Minhas entregas e coletas'}</h2><p>${
+    perfil.papel==='motorista'?'Confirme a retirada das suas tarefas e finalize as disponíveis no pool.':
+    perfil.papel==='loja'?'Acompanhe o andamento das suas entregas e coletas.':
+    'Todas as entregas e coletas lançadas pelas lojas.'}</p></div>`;
   if(perfil.papel==='admin'){
     const exp=el('button','btn btn-ghost btn-sm','⬇ Exportar Excel'); exp.addEventListener('click',exportXLSX); head.appendChild(exp);
   }
@@ -504,7 +504,7 @@ function filtered(){
 function renderList(){
   const list=$('#entList'); list.innerHTML=''; const data=filtered();
   if(!data.length){
-    list.appendChild(el('div','card empty',`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 9l9-6 9 6v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M9 21V12h6v9"/></svg><b>Nenhuma entrega encontrada</b>${perfil.papel==='loja'?'Crie uma em “Nova entrega”.':'Ajuste os filtros acima.'}`));
+    list.appendChild(el('div','card empty',`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 9l9-6 9 6v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M9 21V12h6v9"/></svg><b>Nenhum registro encontrado</b>${perfil.papel==='loja'?'Crie um em “Nova entrega/coleta”.':'Ajuste os filtros acima.'}`));
     return;
   }
   data.forEach(e=>list.appendChild(cardEntrega(e)));
@@ -744,7 +744,7 @@ async function confirmarColeta(e){
   }).eq('id',e.id).eq('status','pendente').select();
   if(error){toast(error.message,'err');return;}
   if(!data||!data.length){ toast('Esta entrega já foi coletada por outro motorista.','err'); await fetchEntregas(); renderList(); return; }
-  toast('Coleta confirmada','ok'); await fetchEntregas(); renderList();
+  toast(e.tipo_servico==='coleta'?'Retirada confirmada':'Coleta confirmada','ok'); await fetchEntregas(); renderList();
 }
 function comprimirImagem(file, max=1280, q=0.72){
   return new Promise((resolve,reject)=>{
@@ -856,7 +856,7 @@ function modalEntrega(e){
     btn.disabled=true; btn.textContent='Salvando…';
     const {error}=await sb.from('entregas').update(upd).eq('id',e.id);
     if(error){btn.disabled=false;btn.textContent='Confirmar entrega';toast(error.message,'err');return;}
-    bg.remove(); toast('Entrega registrada','ok'); await fetchEntregas(); renderList();
+    bg.remove(); toast(ehColeta?'Entrega no CD registrada':'Entrega registrada','ok'); await fetchEntregas(); renderList();
   });
 }
 async function excluir(e){
@@ -871,7 +871,7 @@ async function excluir(e){
 =================================================================== */
 function viewNova(){
   const m=$('#main'); m.innerHTML='';
-  m.appendChild(el('div','view-head','<div><h2>Nova entrega</h2><p>Escolha o <b>tipo de serviço</b> (entrega ao cliente ou coleta no cliente) e a forma de retirada.</p></div>'));
+  m.appendChild(el('div','view-head','<div><h2>Nova entrega/coleta</h2><p>Escolha o <b>tipo de serviço</b> (entrega ao cliente ou coleta no cliente) e a forma de retirada.</p></div>'));
   const lojaFixa=perfil.papel==='loja';
   const card=el('div','card card-pad'); const f=el('div','form-grid');
   f.innerHTML=`
@@ -919,6 +919,7 @@ function viewNova(){
     $('#lbl-cli').textContent  = coleta ? 'Cliente (origem da coleta) *' : 'Nome do cliente *';
     $('#lbl-end').textContent  = coleta ? 'Endereço da coleta (no cliente) *' : 'Endereço completo da entrega *';
     $('#n-end').setAttribute('placeholder', coleta ? 'Endereço onde a mercadoria será retirada' : 'Rua, número, complemento, bairro, cidade/UF, CEP');
+    save.textContent = coleta ? 'Lançar coleta' : 'Lançar entrega';
   };
   $('#n-forma').addEventListener('change',aplicaForma); aplicaForma();
   $('#n-tipo').addEventListener('change',aplicaTipo); aplicaTipo();
@@ -951,7 +952,7 @@ function viewNova(){
     if(faltando.length){toast('Preencha todos os campos obrigatórios (*).','err');return;}
     save.disabled=true; save.textContent='Salvando…';
     const {error}=await sb.from('entregas').insert(reg);
-    save.disabled=false; save.textContent='Lançar entrega';
+    save.disabled=false; save.textContent=(tipo==='coleta'?'Lançar coleta':'Lançar entrega');
     if(error){toast('Erro: '+error.message,'err');return;}
     toast(tipo==='coleta'?'Coleta lançada com sucesso':'Entrega lançada com sucesso','ok');
     go('entregas');
@@ -1013,8 +1014,8 @@ function exportXLSX(){
   }));
   const ws=XLSX.utils.json_to_sheet(rows);
   ws['!cols']=[{wch:14},{wch:9},{wch:12},{wch:18},{wch:26},{wch:22},{wch:16},{wch:24},{wch:40},{wch:18},{wch:18},{wch:20},{wch:16},{wch:22},{wch:12},{wch:18},{wch:30},{wch:26},{wch:11},{wch:28},{wch:28},{wch:15}];
-  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Entregas');
-  XLSX.writeFile(wb,`entregas_${todayISO()}.xlsx`);
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Entregas e coletas');
+  XLSX.writeFile(wb,`entregas_coletas_${todayISO()}.xlsx`);
   toast('Excel gerado','ok');
 }
 
