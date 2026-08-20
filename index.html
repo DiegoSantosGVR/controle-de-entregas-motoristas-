@@ -132,9 +132,14 @@ main{max-width:1140px;margin:0 auto;padding:clamp(16px,4vw,28px);}
 .chart-row .qt{font-family:var(--mono);font-size:14px;font-weight:600;text-align:right}
 
 /* ---------- Filtros ---------- */
-.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px}
-.toolbar .field{margin:0;min-width:150px;flex:1}
-.toolbar .field input,.toolbar .field select{padding:9px 11px;font-size:14px}
+.toolbar{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:11px 12px;align-items:end;margin-bottom:16px}
+.toolbar .field{margin:0;min-width:0}
+.toolbar .field input,.toolbar .field select{padding:9px 11px;font-size:14px;width:100%}
+.f-periodo{grid-column:span 2}
+.f-periodo .par{display:flex;gap:8px;align-items:center}
+.f-periodo .par input{flex:1;min-width:0}
+.f-periodo .par span{color:var(--ink-faint);font-size:13px}
+@media (max-width:600px){ .f-periodo{grid-column:span 1} }
 
 /* ---------- Entrega cards (assinatura: trilha de status) ---------- */
 .list{display:grid;gap:13px}
@@ -465,8 +470,8 @@ async function viewEntregas(){
       <option value="">Todos</option><option value="entrega">Entrega</option><option value="coleta">Coleta</option></select></div>
     <div class="field"><label>Origem</label><select id="f-origem">
       <option value="">Todas</option><option value="interno">Motorista interno</option><option value="terceiro">Via terceiro</option></select></div>
-    <div class="field"><label>Coleta de</label><input id="f-de" type="date" value="${filtros.de}"></div>
-    <div class="field"><label>até</label><input id="f-ate" type="date" value="${filtros.ate}"></div>`;
+    <div class="field f-periodo"><label>Período de coleta</label>
+      <div class="par"><input id="f-de" type="date" value="${filtros.de}"><span>–</span><input id="f-ate" type="date" value="${filtros.ate}"></div></div>`;
   m.appendChild(tb);
   $('#f-status').value=filtros.status; if($('#f-loja'))$('#f-loja').value=filtros.loja; $('#f-origem').value=filtros.origem||''; $('#f-tipo').value=filtros.tipo||'';
   ['f-busca','f-status','f-loja','f-tipo','f-origem','f-de','f-ate'].forEach(id=>{ const e=$('#'+id); if(e) e.addEventListener('input',applyFilters); });
